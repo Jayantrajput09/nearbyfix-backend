@@ -564,27 +564,27 @@ router.post(
             "name email phone profilePhoto skills serviceTypes experience rating isAvailable location"
           );
 
-      // =================================================
-      // EMAIL
-      // =================================================
+     // =================================================
+// EMAIL
+// =================================================
 
-      if (technicianUser.email) {
-        try {
-          const customerName =
-            user.name ||
-            "Customer";
+if (technicianUser.email) {
+  try {
+    const customerName =
+      user.name ||
+      "Customer";
 
-          await sendEmail({
-            to: technicianUser.email,
+    sendEmail({
+      to: technicianUser.email,
 
-            subject:
-              `🔧 New NearbyFix Service Request from ${customerName}`,
+      subject:
+        `🔧 New NearbyFix Service Request from ${customerName}`,
 
-            text: `
+      text: `
 Hello ${
-              technicianUser.name ||
-              "Technician"
-            },
+        technicianUser.name ||
+        "Technician"
+      },
 
 You have received a new service request on NearbyFix.
 
@@ -612,9 +612,9 @@ ${requestLocation.pincode || ""}
 Please login to your NearbyFix technician dashboard to view and accept the request.
 
 NearbyFix
-            `,
+      `,
 
-            html: `
+      html: `
 <div style="
   font-family:Arial,sans-serif;
   max-width:600px;
@@ -684,16 +684,35 @@ NearbyFix
   </p>
 
 </div>
-            `,
-          });
-        } catch (emailError) {
+      `,
+    })
+      .then((emailResult) => {
+        if (emailResult?.success) {
+          console.log(
+            "TECHNICIAN EMAIL SENT:",
+            technicianUser.email
+          );
+        } else {
           console.error(
-            "TECHNICIAN EMAIL ERROR:",
-            emailError.message
+            "TECHNICIAN EMAIL FAILED:",
+            emailResult?.error
           );
         }
-      }
+      })
+      .catch((emailError) => {
+        console.error(
+          "TECHNICIAN EMAIL ERROR:",
+          emailError.message
+        );
+      });
 
+  } catch (emailError) {
+    console.error(
+      "TECHNICIAN EMAIL ERROR:",
+      emailError.message
+    );
+  }
+}
       // =================================================
       // RESPONSE
       // =================================================
