@@ -1,15 +1,28 @@
-const nodemailer = require("nodemailer");
+const { BrevoClient } = require("@getbrevo/brevo");
 
-const transporter = nodemailer.createTransport({
-  host: "smtp-relay.brevo.com",
-  port: 587,
-  secure: false,
+let brevoClient = null;
 
-  auth: {
-    user: process.env.BREVO_SMTP_LOGIN,
-    pass: process.env.BREVO_SMTP_KEY,
-  },
-});
+const createBrevoClient = () => {
+  if (brevoClient) {
+    return brevoClient;
+  }
+
+  if (!process.env.BREVO_API_KEY) {
+    console.warn(
+      "BREVO_API_KEY missing. Email notifications disabled."
+    );
+
+    return null;
+  }
+
+  brevoClient = new BrevoClient({
+    apiKey: process.env.BREVO_API_KEY,
+    timeoutInSeconds: 30,
+    maxRetries: 2,
+  });
+
+  return brevoClient;
+};
 
 const sendEmail = async ({
   to,
@@ -25,57 +38,83 @@ const sendEmail = async ({
       };
     }
 
-    if (
-      !process.env.BREVO_SMTP_LOGIN ||
-      !process.env.BREVO_SMTP_KEY
-    ) {
-      console.error(
-        "BREVO SMTP credentials missing"
-      );
+    const brevo = createBrevoClient();
 
+    if (!brevo) {
       return {
         success: false,
-        error: "Brevo SMTP credentials are missing",
+        skipped: true,
+        error: "BREVO_API_KEY is not configured",
       };
     }
 
-    const from =
-      process.env.EMAIL_FROM ||
-      "NearbyFix <jr9691522@gmail.com>";
+    const senderEmail =
+      process.env.EMAIL_FROM_EMAIL;
 
-    console.log("=================================");
-    console.log("SENDING EMAIL WITH BREVO");
+    const senderName =
+      process.env.EMAIL_FROM_NAME ||
+      "NearbyFix";
+
+    if (!senderEmail) {
+      return {
+        success: false,
+        error: "EMAIL_FROM_EMAIL is not configured",
+      };
+    }
+
+    console.log("====================================");
+    console.log("SENDING EMAIL WITH BREVO API");
     console.log("TO:", to);
-    console.log("FROM:", from);
+    console.log(
+      "FROM:",
+      `${senderName} <${senderEmail}>`
+    );
     console.log("SUBJECT:", subject);
-    console.log("=================================");
+    console.log("====================================");
 
-    const info = await transporter.sendMail({
-      from,
-      to,
-      subject,
-      text,
-      html,
-    });
+    const result =
+      await brevo.transactionalEmails.sendTransacEmail({
+        sender: {
+          name: senderName,
+          email: senderEmail,
+        },
+
+        to: [
+          {
+            email: to,
+          },
+        ],
+
+        subject,
+
+        textContent: text,
+
+        htmlContent:
+          html || `<p>${text}</p>`,
+      });
 
     console.log(
-      "EMAIL SENT SUCCESSFULLY:",
-      info.messageId
+      "BREVO EMAIL SENT SUCCESSFULLY:"
     );
+
+    console.log(result);
 
     return {
       success: true,
-      messageId: info.messageId,
+      data: result,
     };
+
   } catch (error) {
     console.error(
-      "BREVO EMAIL ERROR:",
+      "BREVO API EMAIL ERROR:",
       error
     );
 
     return {
       success: false,
-      error: error.message,
+      error:
+        error?.message ||
+        "Brevo failed to send email",
     };
   }
 };
