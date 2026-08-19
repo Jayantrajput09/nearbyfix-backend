@@ -18,25 +18,58 @@ console.log("=================================");
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:3000",
+  "https://nearyfix.netlify.app",
+  "https://www.nearyfix.netlify.app",
 ];
 
 app.use(
   cors({
     origin: function (origin, callback) {
-      // Allow Postman / mobile apps / server-to-server requests
+      // Allow requests without an origin
+      // Postman / mobile apps / server-to-server
       if (!origin) {
         return callback(null, true);
       }
 
+      // Allow localhost
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
+
+      // Allow Netlify deploy preview URLs
+      if (
+        /^https:\/\/[a-z0-9-]+--nearyfix\.netlify\.app$/.test(
+          origin
+        )
+      ) {
+        return callback(null, true);
+      }
+
+      console.log(
+        "CORS BLOCKED ORIGIN:",
+        origin
+      );
 
       return callback(
         new Error("Not allowed by CORS")
       );
     },
+
     credentials: true,
+
+    methods: [
+      "GET",
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE",
+      "OPTIONS",
+    ],
+
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+    ],
   })
 );
 
