@@ -1,62 +1,112 @@
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
 
-let transporter = null;
+let resendClient = null;
 
-const createTransporter = () => {
-  if (transporter) {
-    return transporter;
+const createResendClient = () => {
+  if (resendClient) {
+    return resendClient;
   }
 
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+  if (!process.env.RESEND_API_KEY) {
     console.warn(
-      "EMAIL_USER or EMAIL_PASS missing. Email notifications disabled."
+      "RESEND_API_KEY missing. Email notifications disabled."
     );
 
     return null;
   }
 
-  transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 465,
-  secure: true,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+  resendClient = new Resend(
+    process.env.RESEND_API_KEY
+  );
 
-  return transporter;
+  return resendClient;
 };
 
-const sendEmail = async ({ to, subject, text, html }) => {
+const sendEmail = async ({
+  to,
+  subject,
+  text,
+  html,
+}) => {
   try {
-    const mailer = createTransporter();
+    const resend = createResendClient();
 
-    if (!mailer) {
+    if (!resend) {
       return {
         success: false,
         skipped: true,
-        error: "Email transporter is not configured",
+        error:
+          "RESEND_API_KEY is not configured",
       };
     }
 
-    await mailer.sendMail({
-      from:
-        process.env.EMAIL_FROM ||
-        `"NearbyFix" <${process.env.EMAIL_USER}>`,
-      to,
-      subject,
-      text,
-      html,
-    });
+    if (!to) {
+      return {
+        success: false,
+        error: "Recipient email is required",
+      };
+    }
 
-    console.log("EMAIL SENT SUCCESSFULLY:", to);
+    // =========================================
+    // SENDER EMAIL
+    // =========================================
+    //
+    // For testing, use the email address
+    // provided/allowed by your Resend setup.
+    //
+    // Later, when you verify your own domain,
+    // change RESEND_FROM_EMAIL in Render.
+    //
+
+    const from =
+      process.env.RESEND_FROM_EMAIL ||
+      "NearbyFix <onboarding@resend.dev>";
+
+    console.log(
+      "SENDING EMAIL WITH RESEND"
+    );
+
+    console.log("TO:", to);
+    console.log("FROM:", from);
+    console.log("SUBJECT:", subject);
+
+    const { data, error } =
+      await resend.emails.send({
+        from,
+        to,
+        subject,
+        text,
+        html,
+      });
+
+    if (error) {
+      console.error(
+        "RESEND EMAIL ERROR:",
+        error
+      );
+
+      return {
+        success: false,
+        error:
+          error.message ||
+          "Resend failed to send email",
+      };
+    }
+
+    console.log(
+      "EMAIL SENT SUCCESSFULLY:",
+      data
+    );
 
     return {
       success: true,
+      data,
     };
   } catch (error) {
-    console.error("EMAIL SEND ERROR:", error);
+    console.error(
+      "EMAIL SEND ERROR:",
+      error
+    );
 
     return {
       success: false,
