@@ -203,6 +203,29 @@ const login = async (req, res) => {
     }
 
     // -----------------------------------
+// BLOCKED USER CHECK
+// -----------------------------------
+
+if (user.isBlocked) {
+  return res.status(403).json({
+    success: false,
+    message:
+      "Your account has been blocked by admin",
+  });
+}
+
+// -----------------------------------
+// LOGIN TRACKING
+// -----------------------------------
+
+user.lastLogin = new Date();
+
+user.loginCount =
+  (user.loginCount || 0) + 1;
+
+await user.save();
+
+    // -----------------------------------
     // JWT SECRET
     // -----------------------------------
 
