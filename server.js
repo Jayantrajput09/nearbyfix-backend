@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const mongoose = require("mongoose");
+const reviewRoutes = require("./routes/reviewRoutes");
 
 dotenv.config();
 
@@ -158,6 +159,8 @@ app.use(
   "/api/admin",
   require("./routes/adminRoutes")
 );
+
+app.use("/api/reviews", reviewRoutes);
 
 // =====================================================
 // API 404
