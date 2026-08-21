@@ -141,6 +141,26 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+
+    // =====================================
+// ADMIN / ACCOUNT STATUS
+// =====================================
+
+isBlocked: {
+  type: Boolean,
+  default: false,
+},
+
+lastLogin: {
+  type: Date,
+  default: null,
+},
+
+loginCount: {
+  type: Number,
+  default: 0,
+},
+
   },
   {
     timestamps: true,
