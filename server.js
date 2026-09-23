@@ -1,15 +1,31 @@
 const express = require("express");
+
 const cors = require("cors");
+
 const dotenv = require("dotenv");
+
 const mongoose = require("mongoose");
+
+const http = require("http");
+
+const { Server } = require("socket.io");
+
 const reviewRoutes = require("./routes/reviewRoutes");
 
 dotenv.config();
 
 const app = express();
 
+// =====================================================
+// HTTP SERVER
+// =====================================================
+
+const server = http.createServer(app);
+
 console.log("=================================");
+
 console.log("NEARBYFIX SERVER.JS LOADED");
+
 console.log("=================================");
 
 // =====================================================
@@ -28,16 +44,19 @@ app.use(
     origin: function (origin, callback) {
       // Allow requests without an origin
       // Postman / mobile apps / server-to-server
+
       if (!origin) {
         return callback(null, true);
       }
 
       // Allow localhost
+
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
 
       // Allow Netlify deploy preview URLs
+
       if (
         /^https:\/\/[a-z0-9-]+--nearyfix\.netlify\.app$/.test(
           origin
@@ -74,6 +93,325 @@ app.use(
   })
 );
 
+// =====================================================
+// SOCKET.IO
+// =====================================================
+
+const io = new Server(server, {
+  cors: {
+    origin: function (origin, callback) {
+      // Allow requests without an origin
+
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      // Allow localhost and main Netlify URLs
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Allow Netlify deploy preview URLs
+
+      if (
+        /^https:\/\/[a-z0-9-]+--nearyfix\.netlify\.app$/.test(
+          origin
+        )
+      ) {
+        return callback(null, true);
+      }
+
+      console.log(
+        "SOCKET CORS BLOCKED ORIGIN:",
+        origin
+      );
+
+      return callback(
+        new Error(
+          "Not allowed by Socket.IO CORS"
+        )
+      );
+    },
+
+    credentials: true,
+  },
+});
+
+// =====================================================
+// SOCKET.IO AUTHENTICATION
+// =====================================================
+
+io.use((socket, next) => {
+  try {
+    const token =
+      socket.handshake.auth?.token;
+
+    if (!token) {
+      return next(
+        new Error("Authentication token missing")
+      );
+    }
+
+    const decoded =
+      require("jsonwebtoken").verify(
+        token,
+        process.env.JWT_SECRET
+      );
+
+    socket.userId = decoded.id;
+    socket.userRole = decoded.role;
+
+    next();
+  } catch (error) {
+    console.error(
+      "SOCKET AUTH ERROR:",
+      error.message
+    );
+
+    next(
+      new Error("Invalid or expired token")
+    );
+  }
+});
+
+// =====================================================
+// SOCKET CONNECTION
+// =====================================================
+
+io.on("connection", (socket) => {
+  console.log(
+    "SOCKET CONNECTED:",
+    socket.userId,
+    socket.userRole
+  );
+
+  // ===================================================
+  // JOIN CHAT ROOM
+  // ===================================================
+
+  socket.on(
+    "joinChat",
+    async (requestId, callback) => {
+      try {
+        if (!requestId) {
+          return callback?.({
+            success: false,
+            message: "Request ID is required",
+          });
+        }
+
+        const ServiceRequest = require(
+          "./models/ServiceRequest"
+        );
+
+        const request =
+          await ServiceRequest.findById(
+            requestId
+          );
+
+        if (!request) {
+          return callback?.({
+            success: false,
+            message: "Service request not found",
+          });
+        }
+
+        // Chat is available only after
+        // a technician has been assigned.
+
+        if (!request.technician) {
+          return callback?.({
+            success: false,
+            message:
+              "Chat is not available until a technician accepts the request",
+          });
+        }
+
+        const currentUserId =
+          String(socket.userId);
+
+        const isCustomer =
+          String(request.user) ===
+          currentUserId;
+
+        const isTechnician =
+          String(request.technician) ===
+          currentUserId;
+
+        // Only the customer and assigned
+        // technician can enter this room.
+
+        if (
+          !isCustomer &&
+          !isTechnician
+        ) {
+          return callback?.({
+            success: false,
+            message:
+              "You are not authorized to access this chat",
+          });
+        }
+
+        const roomName =
+          `request:${requestId}`;
+
+        socket.join(roomName);
+
+        console.log(
+          `SOCKET JOINED CHAT: ${currentUserId} -> ${roomName}`
+        );
+
+        return callback?.({
+          success: true,
+          message: "Joined chat successfully",
+          room: roomName,
+        });
+      } catch (error) {
+        console.error(
+          "JOIN CHAT ERROR:",
+          error
+        );
+
+        return callback?.({
+          success: false,
+          message:
+            "Failed to join chat",
+        });
+      }
+    }
+  );
+
+  socket.on(
+  "sendMessage",
+  async (data, callback) => {
+    try {
+      const { requestId, message } = data || {};
+
+      if (!requestId) {
+        return callback?.({
+          success: false,
+          message: "Request ID is required",
+        });
+      }
+
+      if (
+        typeof message !== "string" ||
+        !message.trim()
+      ) {
+        return callback?.({
+          success: false,
+          message: "Message cannot be empty",
+        });
+      }
+
+      const cleanMessage = message.trim();
+
+      if (cleanMessage.length > 1000) {
+        return callback?.({
+          success: false,
+          message:
+            "Message cannot exceed 1000 characters",
+        });
+      }
+
+      const ServiceRequest = require(
+        "./models/ServiceRequest"
+      );
+
+      const Message = require(
+        "./models/Message"
+      );
+
+      const request =
+        await ServiceRequest.findById(requestId);
+
+      if (!request) {
+        return callback?.({
+          success: false,
+          message: "Service request not found",
+        });
+      }
+
+      if (!request.technician) {
+        return callback?.({
+          success: false,
+          message:
+            "Chat is not available until a technician accepts the request",
+        });
+      }
+
+      const currentUserId =
+        String(socket.userId);
+
+      const isCustomer =
+        String(request.user) === currentUserId;
+
+      const isTechnician =
+        String(request.technician) ===
+        currentUserId;
+
+      if (!isCustomer && !isTechnician) {
+        return callback?.({
+          success: false,
+          message:
+            "You are not authorized to send messages in this chat",
+        });
+      }
+
+      const newMessage =
+        await Message.create({
+          request: requestId,
+          sender: socket.userId,
+          message: cleanMessage,
+        });
+
+      const populatedMessage =
+        await Message.findById(
+          newMessage._id
+        ).populate(
+          "sender",
+          "name role profilePhoto"
+        );
+
+      const roomName =
+        `request:${requestId}`;
+
+      io.to(roomName).emit(
+        "newMessage",
+        populatedMessage
+      );
+
+      return callback?.({
+        success: true,
+        message: populatedMessage,
+      });
+    } catch (error) {
+      console.error(
+        "SOCKET SEND MESSAGE ERROR:",
+        error
+      );
+
+      return callback?.({
+        success: false,
+        message: "Failed to send message",
+      });
+    }
+  }
+);
+
+  // ===================================================
+  // DISCONNECT
+  // ===================================================
+
+  socket.on("disconnect", (reason) => {
+    console.log(
+      "SOCKET DISCONNECTED:",
+      socket.userId,
+      reason
+    );
+  });
+});
 // =====================================================
 // BODY PARSER
 // =====================================================
@@ -162,6 +500,11 @@ app.use(
 
 app.use("/api/reviews", reviewRoutes);
 
+app.use(
+  "/api/chat",
+  require("./routes/chatRoutes")
+);
+
 // =====================================================
 // API 404
 // =====================================================
@@ -183,6 +526,7 @@ app.use((error, req, res, next) => {
   );
 
   console.error("GLOBAL ERROR:");
+
   console.error(error);
 
   console.error(
@@ -194,6 +538,7 @@ app.use((error, req, res, next) => {
   }
 
   // CORS error
+
   if (
     error.message === "Not allowed by CORS"
   ) {
@@ -204,12 +549,14 @@ app.use((error, req, res, next) => {
   }
 
   // Mongoose validation error
+
   if (
     error.name === "ValidationError"
   ) {
     return res.status(400).json({
       success: false,
       message: "Validation error",
+
       errors: Object.values(
         error.errors
       ).map((err) => err.message),
@@ -217,6 +564,7 @@ app.use((error, req, res, next) => {
   }
 
   // Mongoose CastError
+
   if (
     error.name === "CastError"
   ) {
@@ -230,6 +578,7 @@ app.use((error, req, res, next) => {
     error.status || 500
   ).json({
     success: false,
+
     message:
       error.message ||
       "Internal server error",
@@ -412,7 +761,11 @@ mongoose
 
     await runMigrations();
 
-    app.listen(PORT, () => {
+    // =================================================
+    // START HTTP + SOCKET.IO SERVER
+    // =================================================
+
+    server.listen(PORT, () => {
       console.log(
         "================================="
       );
