@@ -37,6 +37,10 @@ const allowedOrigins = [
   "http://localhost:3000",
   "https://nearyfix.netlify.app",
   "https://www.nearyfix.netlify.app",
+
+    // Capacitor Android app
+  "https://localhost",
+
 ];
 
 app.use(
